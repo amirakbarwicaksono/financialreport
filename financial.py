@@ -1,361 +1,378 @@
-# import streamlit as st
-# import pandas as pd
-# import plotly.graph_objects as go
-# from datetime import datetime, timedelta
-# import plotly.express as px
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import random
+from datetime import datetime
+import time
 
-# # ============================================================
-# # KONFIGURASI HALAMAN
-# # ============================================================
-# st.set_page_config(
-#     page_title="Finance Dashboard",
-#     page_icon="📊",
-#     layout="wide",
-#     initial_sidebar_state="expanded"
-# )
+# Page configuration
+st.set_page_config(
+    page_title="Smart Microgrid - Power Equalization System",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# # ============================================================
-# # FUNGSI UTILITY
-# # ============================================================
-# def format_rupiah(amount):
-#     return f"Rp{amount:,.0f}".replace(",", ".")
+# Custom CSS
+st.markdown("""
+    <style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .sub-header {
+        font-size: 1.2rem;
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# def get_df():
-#     """Ambil data dari session_state dan konversi ke DataFrame"""
-#     if 'transactions' not in st.session_state or not st.session_state.transactions:
-#         return pd.DataFrame(columns=['id', 'desc', 'amount', 'type', 'date'])
-    
-#     df = pd.DataFrame(st.session_state.transactions)
-    
-#     # Pastikan kolom yang diperlukan ada
-#     required_cols = ['id', 'desc', 'amount', 'type', 'date']
-#     for col in required_cols:
-#         if col not in df.columns:
-#             df[col] = None
-    
-#     # Konversi tipe data
-#     if 'amount' in df.columns:
-#         df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
-    
-#     if 'date' in df.columns:
-#         df['date'] = pd.to_datetime(df['date'])
-    
-#     return df
+# Title Section
+st.markdown('<div class="main-header">⚡ Smart Microgrid Power Equalization System</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Berbasis Frekuensi Radio Sub-Gigahertz untuk Kawasan Nirinternet</div>', unsafe_allow_html=True)
 
-# # ============================================================
-# # INISIALISASI DATA
-# # ============================================================
-# def init_data():
-#     """Inisialisasi data awal jika belum ada"""
-#     if 'transactions' not in st.session_state:
-#         st.session_state.transactions = [
-#             {"id": 1, "desc": "Gaji Pokok", "amount": 9800000, "type": "in", "date": datetime.now() - timedelta(days=5)},
-#             {"id": 2, "desc": "Dana Hibah", "amount": 1422340, "type": "in", "date": datetime.now() - timedelta(days=10)},
-#             {"id": 3, "desc": "Jual Workshop", "amount": 833333, "type": "in", "date": datetime.now() - timedelta(days=15)},
-#             {"id": 4, "desc": "THR", "amount": 816667, "type": "in", "date": datetime.now() - timedelta(days=20)},
-#             {"id": 5, "desc": "Gaji 13", "amount": 816667, "type": "in", "date": datetime.now() - timedelta(days=25)},
-#             {"id": 6, "desc": "Jual Jasa", "amount": 1000000, "type": "in", "date": datetime.now() - timedelta(days=30)},
-#             {"id": 7, "desc": "Gym", "amount": 565000, "type": "out", "date": datetime.now() - timedelta(days=3)},
-#             {"id": 8, "desc": "Kost", "amount": 800000, "type": "out", "date": datetime.now() - timedelta(days=8)},
-#             {"id": 9, "desc": "Makan", "amount": 1500000, "type": "out", "date": datetime.now() - timedelta(days=12)},
-#             {"id": 10, "desc": "Entertain", "amount": 1500000, "type": "out", "date": datetime.now() - timedelta(days=18)},
-#             {"id": 11, "desc": "Paket", "amount": 100000, "type": "out", "date": datetime.now() - timedelta(days=22)},
-#             {"id": 12, "desc": "Transportasi", "amount": 750000, "type": "out", "date": datetime.now() - timedelta(days=28)},
-#         ]
-#         st.session_state.next_id = 13
+# Sidebar
+with st.sidebar:
+    st.header("⚙️ System Configuration")
+    
+    if 'prev_num_houses' not in st.session_state:
+        st.session_state.prev_num_houses = 8
+    
+    num_houses = st.slider("Number of Houses", 3, 20, 8)
+    
+    if num_houses != st.session_state.prev_num_houses:
+        st.session_state.prev_num_houses = num_houses
+        st.session_state.houses = []
+        st.session_state.initialized = False
+    
+    st.subheader("📡 Communication Settings")
+    frequency = st.selectbox(
+        "Radio Frequency Band",
+        ["433 MHz", "868 MHz", "915 MHz", "2.4 GHz"]
+    )
+    range_km = st.slider("Communication Range (km)", 0.5, 10.0, 3.0)
+    
+    st.subheader("⚡ Power Parameters")
+    base_load = st.slider("Base Load per House (W)", 100, 500, 250)
+    solar_capacity = st.slider("Solar Panel Capacity (W)", 200, 1000, 500)
+    battery_capacity = st.slider("Battery Capacity (kWh)", 1, 10, 5)
+    
+    st.subheader("🤖 Algorithm Settings")
+    # TAMBAHKAN: Threshold yang bisa diatur
+    equalization_threshold = st.slider("Equalization Threshold (W)", 10, 100, 30, 
+                                       help="Minimal selisih daya untuk menentukan surplus/defisit")
+    update_interval = st.number_input("Update Interval (seconds)", 1, 10, 3)
 
-# def calculate_summary(df):
-#     """Hitung summary dari DataFrame"""
-#     if df.empty:
-#         return 0, 0, 0, 0
-    
-#     total_in = df[df['type'] == 'in']['amount'].sum() if 'type' in df.columns else 0
-#     total_out = df[df['type'] == 'out']['amount'].sum() if 'type' in df.columns else 0
-#     balance = total_in - total_out
-    
-#     # Monthly Save (30 hari terakhir)
-#     cutoff = datetime.now() - timedelta(days=30)
-#     if 'date' in df.columns and not df.empty:
-#         recent = df[df['date'] >= cutoff]
-#         recent_in = recent[recent['type'] == 'in']['amount'].sum() if 'type' in recent.columns else 0
-#         recent_out = recent[recent['type'] == 'out']['amount'].sum() if 'type' in recent.columns else 0
-#         monthly_save = recent_in - recent_out
-#     else:
-#         monthly_save = 0
-    
-#     return total_in, total_out, balance, monthly_save
+# Initialize session state with parameters
+if 'initialized' not in st.session_state or not st.session_state.initialized:
+    st.session_state.houses = []
+    for i in range(num_houses):
+        load_variation = random.randint(-50, 50)
+        solar_variation = random.randint(-50, 50)
+        
+        st.session_state.houses.append({
+            'id': i,
+            'name': f'House {i+1}',
+            'load': base_load + load_variation,
+            'solar': solar_capacity + solar_variation,
+            'battery': random.randint(20, 90),
+            'battery_capacity': battery_capacity,
+            'status': 'normal',
+            'power_balance': 0,
+            'surplus': False,
+            'deficit': False,
+            'role': 'idle'
+        })
+    st.session_state.initialized = True
 
-# # ============================================================
-# # SIDEBAR - FORM TAMBAH TRANSAKSI
-# # ============================================================
-# def sidebar_form():
-#     st.sidebar.header("✏️ Tambah Transaksi")
+# Function to update power data with parameters
+def update_power_data():
+    base_load = st.session_state.get('base_load', 250)
+    solar_capacity = st.session_state.get('solar_capacity', 500)
+    battery_capacity = st.session_state.get('battery_capacity', 5)
+    # Ambil threshold dari session state
+    threshold = st.session_state.get('equalization_threshold', 30)
     
-#     with st.sidebar.form("add_transaction_form"):
-#         desc = st.text_input("Deskripsi", placeholder="Contoh: Gaji, Makan, dll")
-#         amount = st.number_input("Jumlah (Rp)", min_value=0, step=1000, value=50000)
-#         trans_type = st.selectbox(
-#             "Jenis", 
-#             ["in", "out"], 
-#             format_func=lambda x: "💰 Take In (Pemasukan)" if x == "in" else "📤 Take Out (Pengeluaran)"
-#         )
+    for house in st.session_state.houses:
+        load_change = random.randint(-30, 30)
+        solar_change = random.randint(-30, 30)
+        battery_change = random.randint(-5, 5)
         
-#         submitted = st.form_submit_button("➕ Tambah", width='stretch')
+        new_load = base_load + load_change
+        house['load'] = max(50, new_load)
         
-#         if submitted:
-#             if desc and amount > 0:
-#                 # Pastikan transactions ada
-#                 if 'transactions' not in st.session_state:
-#                     st.session_state.transactions = []
-#                 if 'next_id' not in st.session_state:
-#                     st.session_state.next_id = 1
-                
-#                 st.session_state.transactions.append({
-#                     "id": st.session_state.next_id,
-#                     "desc": desc,
-#                     "amount": amount,
-#                     "type": trans_type,
-#                     "date": datetime.now()
-#                 })
-#                 st.session_state.next_id += 1
-#                 st.success("✅ Transaksi berhasil ditambahkan!")
-#                 st.rerun()
-#             else:
-#                 st.error("⚠️ Isi deskripsi dan jumlah yang valid!")
-    
-#     st.sidebar.divider()
-    
-#     # Tombol reset
-#     if st.sidebar.button("🔄 Reset Semua Data", width='stretch'):
-#         if st.sidebar.button("⚠️ Konfirmasi Reset", width='stretch'):
-#             st.session_state.transactions = []
-#             st.session_state.next_id = 1
-#             st.rerun()
-    
-#     # Export CSV
-#     if st.sidebar.button("📥 Export CSV", width='stretch'):
-#         df = get_df()
-#         if not df.empty:
-#             csv = df.to_csv(index=False)
-#             st.sidebar.download_button(
-#                 label="⬇️ Download CSV",
-#                 data=csv,
-#                 file_name=f"transactions_{datetime.now().strftime('%Y%m%d')}.csv",
-#                 mime="text/csv"
-#             )
-#         else:
-#             st.sidebar.warning("Belum ada data untuk diexport")
-    
-#     # Filter
-#     st.sidebar.divider()
-#     st.sidebar.header("🔍 Filter")
-    
-#     filter_type = st.sidebar.selectbox(
-#         "Tampilkan",
-#         ["Semua", "Take In", "Take Out"],
-#         index=0
-#     )
-    
-#     return filter_type
+        new_solar = solar_capacity + solar_change
+        house['solar'] = max(0, new_solar)
+        
+        new_battery = house['battery'] + battery_change
+        house['battery'] = max(0, min(100, new_battery))
+        
+        house['battery_capacity'] = battery_capacity
+        
+        # Calculate power balance
+        house['power_balance'] = house['solar'] - house['load']
+        
+        # PERBAIKAN: Gunakan threshold yang bisa diatur
+        house['surplus'] = house['power_balance'] > threshold
+        house['deficit'] = house['power_balance'] < -threshold
+        
+        # Determine role
+        if house['surplus'] and house['battery'] > 20:
+            house['role'] = 'supplier'
+        elif house['deficit'] and house['battery'] < 90:
+            house['role'] = 'consumer'
+        else:
+            house['role'] = 'idle'
 
-# # ============================================================
-# # MAIN DASHBOARD
-# # ============================================================
-# def main():
-#     # Inisialisasi data
-#     init_data()
-#     df = get_df()
-    
-#     # Header
-#     col1, col2 = st.columns([3, 1])
-#     with col1:
-#         st.title("📊 Finance Dashboard")
-#         st.caption("Take In / Take Out - Interactive Dashboard")
-#     with col2:
-#         st.metric("📅 Hari Ini", datetime.now().strftime("%d %B %Y"))
-    
-#     st.divider()
-    
-#     # Sidebar
-#     filter_type = sidebar_form()
-    
-#     # Apply filter
-#     if not df.empty:
-#         if filter_type == "Take In":
-#             df_filtered = df[df['type'] == 'in'] if 'type' in df.columns else df
-#         elif filter_type == "Take Out":
-#             df_filtered = df[df['type'] == 'out'] if 'type' in df.columns else df
-#         else:
-#             df_filtered = df
-#     else:
-#         df_filtered = df
-    
-#     # ============================================================
-#     # CARDS SUMMARY
-#     # ============================================================
-#     total_in, total_out, balance, monthly_save = calculate_summary(df)
-    
-#     col1, col2, col3, col4 = st.columns(4)
-    
-#     with col1:
-#         st.metric("💰 Total Take In", format_rupiah(total_in))
-#     with col2:
-#         st.metric("📤 Total Take Out", format_rupiah(total_out))
-#     with col3:
-#         st.metric("📊 Saldo", format_rupiah(balance))
-#     with col4:
-#         st.metric("📈 Monthly Save", format_rupiah(monthly_save))
-    
-#     st.divider()
-    
-#     # ============================================================
-#     # ROW 2: CHART + PROYEKSI + HISTORI
-#     # ============================================================
-#     col_left, col_right = st.columns([3, 2])
-    
-#     with col_left:
-#         # --- CHART ---
-#         st.subheader("📈 Tren 30 Hari Terakhir")
-        
-#         if not df.empty and 'date' in df.columns:
-#             # Siapkan data harian
-#             cutoff = datetime.now() - timedelta(days=30)
-#             df_recent = df[df['date'] >= cutoff].copy()
-            
-#             if not df_recent.empty and 'type' in df_recent.columns:
-#                 df_recent['date_only'] = df_recent['date'].dt.date
-                
-#                 # Group by date
-#                 daily = df_recent.groupby(['date_only', 'type'])['amount'].sum().unstack(fill_value=0)
-                
-#                 # Pastikan kolom 'in' dan 'out' ada
-#                 if 'in' not in daily.columns:
-#                     daily['in'] = 0
-#                 if 'out' not in daily.columns:
-#                     daily['out'] = 0
-                
-#                 daily = daily.reset_index()
-#                 daily = daily.sort_values('date_only')
-                
-#                 # Plot dengan Plotly
-#                 fig = go.Figure()
-                
-#                 fig.add_trace(go.Bar(
-#                     x=daily['date_only'],
-#                     y=daily['in'],
-#                     name='Take In',
-#                     marker_color='#1fb873',
-#                     hovertemplate='%{y:,.0f}'
-#                 ))
-                
-#                 fig.add_trace(go.Bar(
-#                     x=daily['date_only'],
-#                     y=daily['out'],
-#                     name='Take Out',
-#                     marker_color='#ef4444',
-#                     hovertemplate='%{y:,.0f}'
-#                 ))
-                
-#                 fig.update_layout(
-#                     barmode='group',
-#                     height=350,
-#                     margin=dict(l=10, r=10, t=10, b=30),
-#                     xaxis_title="Tanggal",
-#                     yaxis_title="Jumlah (Rp)",
-#                     yaxis_tickformat=',.0f',
-#                     hovermode='x unified',
-#                     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5)
-#                 )
-                
-#                 st.plotly_chart(fig, use_container_width=True)
-#             else:
-#                 st.info("Belum ada data 30 hari terakhir")
-#         else:
-#             st.info("Belum ada data untuk ditampilkan")
-        
-#         # --- PROYEKSI ---
-#         st.subheader("🚀 Proyeksi Masa Depan")
-        
-#         # Hitung proyeksi dari monthly save
-#         months_to_2027 = 18
-#         end_2027 = monthly_save * months_to_2027
-#         five_years = monthly_save * 60
-        
-#         col1, col2, col3 = st.columns(3)
-#         col1.metric("Monthly Save", format_rupiah(monthly_save))
-#         col2.metric("End of 2027", format_rupiah(end_2027))
-#         col3.metric("Usia 35 (5 Tahun)", format_rupiah(five_years))
-        
-#         st.caption("⚡ Proyeksi berdasarkan rata-rata transaksi 30 hari terakhir")
-    
-#     with col_right:
-#         # --- HISTORI ---
-#         st.subheader(f"📜 Histori Transaksi ({len(df_filtered)})")
-        
-#         if not df_filtered.empty:
-#             display_df = df_filtered.sort_values('date', ascending=False).copy()
-#             display_df['type_label'] = display_df['type'].map({'in': '💰 Masuk', 'out': '📤 Keluar'})
-#             display_df['amount_formatted'] = display_df['amount'].apply(format_rupiah)
-#             display_df['date_formatted'] = display_df['date'].dt.strftime('%d %b %Y')
-            
-#             # Tampilkan dataframe
-#             st.dataframe(
-#                 display_df[['date_formatted', 'type_label', 'desc', 'amount_formatted']],
-#                 column_config={
-#                     "date_formatted": "Tanggal",
-#                     "type_label": "Jenis",
-#                     "desc": "Deskripsi",
-#                     "amount_formatted": "Jumlah"
-#                 },
-#                 hide_index=True,
-#                 use_container_width=True,
-#                 height=300
-#             )
-            
-#             # Hapus transaksi
-#             with st.expander("🗑️ Hapus Transaksi", expanded=False):
-#                 trans_options = display_df['id'].tolist()
-#                 if trans_options:
-#                     delete_id = st.selectbox(
-#                         "Pilih transaksi untuk dihapus",
-#                         options=trans_options,
-#                         format_func=lambda x: f"{display_df[display_df['id']==x]['desc'].iloc[0]} - {format_rupiah(display_df[display_df['id']==x]['amount'].iloc[0])}"
-#                     )
-                    
-#                     if st.button("❌ Hapus Transaksi Terpilih", width='stretch'):
-#                         st.session_state.transactions = [t for t in st.session_state.transactions if t['id'] != delete_id]
-#                         st.success("✅ Transaksi berhasil dihapus!")
-#                         st.rerun()
-#         else:
-#             st.info("Belum ada transaksi. Tambahkan melalui sidebar!")
-        
-#         # --- Statistik tambahan ---
-#         st.subheader("📊 Ringkasan Kategori")
-        
-#         if not df.empty and 'type' in df.columns:
-#             # Top 5 pemasukan
-#             top_in = df[df['type'] == 'in'].nlargest(5, 'amount')[['desc', 'amount']] if 'type' in df.columns else pd.DataFrame()
-#             if not top_in.empty:
-#                 st.caption("🏆 Top 5 Pemasukan")
-#                 for _, row in top_in.iterrows():
-#                     st.text(f"  {row['desc']}: {format_rupiah(row['amount'])}")
-            
-#             st.divider()
-            
-#             # Top 5 pengeluaran
-#             top_out = df[df['type'] == 'out'].nlargest(5, 'amount')[['desc', 'amount']] if 'type' in df.columns else pd.DataFrame()
-#             if not top_out.empty:
-#                 st.caption("📉 Top 5 Pengeluaran")
-#                 for _, row in top_out.iterrows():
-#                     st.text(f"  {row['desc']}: {format_rupiah(row['amount'])}")
-    
-#     st.divider()
-    
-#     # Footer
-#     st.caption(f"📊 Data tersimpan di session state • Terakhir diperbarui: {datetime.now().strftime('%H:%M:%S')}")
+# Simpan parameter ke session state
+st.session_state.base_load = base_load
+st.session_state.solar_capacity = solar_capacity
+st.session_state.battery_capacity = battery_capacity
+st.session_state.equalization_threshold = equalization_threshold
 
-# # ============================================================
-# # RUN APP
-# # ============================================================
-# if __name__ == "__main__":
-#     main()
+# Real-time update button
+if st.button("🔄 Update Power Data"):
+    update_power_data()
+
+# Auto-update
+if st.checkbox("Enable Auto-Update"):
+    placeholder = st.empty()
+    while True:
+        update_power_data()
+        time.sleep(update_interval)
+        break
+
+# Main Dashboard
+col1, col2, col3 = st.columns(3)
+
+# Statistics
+total_load = sum(h['load'] for h in st.session_state.houses)
+total_solar = sum(h['solar'] for h in st.session_state.houses)
+total_balance = total_solar - total_load
+surplus_houses = sum(1 for h in st.session_state.houses if h['surplus'])
+deficit_houses = sum(1 for h in st.session_state.houses if h['deficit'])
+
+with col1:
+    st.metric("Total Load", f"{total_load:.0f} W", delta="Demand")
+    st.metric("Total Solar Generation", f"{total_solar:.0f} W", delta="Supply")
+
+with col2:
+    st.metric("Network Balance", f"{total_balance:.0f} W", 
+              delta="Surplus" if total_balance > 0 else "Deficit",
+              delta_color="normal")
+    st.metric("Active Houses", f"{len(st.session_state.houses)}", delta="Connected")
+
+with col3:
+    st.metric("Surplus Houses", f"{surplus_houses}", delta="⚡ Extra Power")
+    st.metric("Deficit Houses", f"{deficit_houses}", delta="🔋 Need Power")
+
+# Communication Network Visualization
+st.subheader("📡 Sub-GHz Communication Network")
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    fig = go.Figure()
+    
+    n = len(st.session_state.houses)
+    angles = np.linspace(0, 2*np.pi, n, endpoint=False)
+    radius = 3
+    
+    for i in range(n):
+        for j in range(i+1, n):
+            if random.random() > 0.3:
+                x0, y0 = radius * np.cos(angles[i]), radius * np.sin(angles[i])
+                x1, y1 = radius * np.cos(angles[j]), radius * np.sin(angles[j])
+                fig.add_trace(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode='lines',
+                    line=dict(width=1, color='lightgray'),
+                    showlegend=False,
+                    hoverinfo='none'
+                ))
+    
+    for i, house in enumerate(st.session_state.houses):
+        x, y = radius * np.cos(angles[i]), radius * np.sin(angles[i])
+        color = 'green' if house['surplus'] else 'red' if house['deficit'] else 'blue'
+        size = 20 + abs(house['power_balance']) / 10
+        
+        fig.add_trace(go.Scatter(
+            x=[x], y=[y],
+            mode='markers+text',
+            marker=dict(size=size, color=color, line=dict(width=2, color='white')),
+            text=[f"{house['name']}<br>{house['power_balance']:.0f}W"],
+            textposition='top center',
+            name=house['name'],
+            hovertemplate=f"<b>{house['name']}</b><br>"
+                         f"Load: {house['load']:.0f} W<br>"
+                         f"Solar: {house['solar']:.0f} W<br>"
+                         f"Battery: {house['battery']:.0f}%<br>"
+                         f"Role: {house['role']}<extra></extra>"
+        ))
+    
+    fig.update_layout(
+        showlegend=False,
+        xaxis=dict(showgrid=False, zeroline=False, visible=False),
+        yaxis=dict(showgrid=False, zeroline=False, visible=False),
+        height=400,
+        plot_bgcolor='rgba(0,0,0,0)',
+        title_text="Network Topology & Power Flow"
+    )
+    
+    st.plotly_chart(fig, width='stretch')
+
+with col2:
+    st.info("📡 **Communication Protocol**")
+    st.markdown(f"""
+    - **Frequency:** {frequency}
+    - **Range:** {range_km} km
+    - **Network Type:** Mesh
+    - **Protocol:** LoRa/LoRaWAN
+    - **Data Rate:** Adaptive
+    - **Latency:** < 100ms
+    """)
+    
+    st.success("🤖 **Power Equalization Algorithm**")
+    st.markdown(f"""
+    - **Threshold:** {equalization_threshold} W
+    - **Method:** Distributed Consensus
+    - **Priority:** Battery Level
+    - **Efficiency:** 92%
+    """)
+
+# House Status Table
+st.subheader("🏠 House Status Dashboard")
+
+df = pd.DataFrame(st.session_state.houses)
+df_display = df[['name', 'load', 'solar', 'battery', 'battery_capacity', 'power_balance', 'role', 'status']].copy()
+df_display['power_balance'] = df_display['power_balance'].round(1)
+df_display['battery'] = df_display['battery'].round(1)
+
+def color_role(val):
+    colors = {
+        'supplier': 'background-color: #90EE90;',
+        'consumer': 'background-color: #F08080;',
+        'idle': 'background-color: #D3D3D3;'
+    }
+    return colors.get(val, '')
+
+styled_df = df_display.style.map(color_role, subset=['role'])
+st.dataframe(styled_df, width='stretch')
+
+# Power Flow Visualization
+st.subheader("⚡ Real-time Power Flow")
+
+fig_power = make_subplots(
+    rows=2, cols=2,
+    subplot_titles=("Power Balance", "Battery Status", "Solar vs Load", "Network Health")
+)
+
+balance_values = [h['power_balance'] for h in st.session_state.houses]
+colors = ['green' if v > 0 else 'red' if v < 0 else 'blue' for v in balance_values]
+fig_power.add_trace(
+    go.Bar(
+        x=[h['name'] for h in st.session_state.houses],
+        y=balance_values,
+        marker_color=colors,
+        name="Balance"
+    ),
+    row=1, col=1
+)
+
+fig_power.add_trace(
+    go.Bar(
+        x=[h['name'] for h in st.session_state.houses],
+        y=[h['battery'] for h in st.session_state.houses],
+        marker_color='orange',
+        name="Battery %"
+    ),
+    row=1, col=2
+)
+
+fig_power.add_trace(
+    go.Bar(
+        x=[h['name'] for h in st.session_state.houses],
+        y=[h['solar'] for h in st.session_state.houses],
+        name="Solar",
+        marker_color='gold'
+    ),
+    row=2, col=1
+)
+fig_power.add_trace(
+    go.Bar(
+        x=[h['name'] for h in st.session_state.houses],
+        y=[h['load'] for h in st.session_state.houses],
+        name="Load",
+        marker_color='steelblue'
+    ),
+    row=2, col=1
+)
+
+health_score = [random.randint(70, 98) for _ in st.session_state.houses]
+fig_power.add_trace(
+    go.Scatter(
+        x=[h['name'] for h in st.session_state.houses],
+        y=health_score,
+        mode='lines+markers',
+        name="Network Health",
+        line=dict(color='green', width=2)
+    ),
+    row=2, col=2
+)
+
+fig_power.update_layout(height=600, showlegend=True)
+st.plotly_chart(fig_power, width='stretch')
+
+# Additional Information
+st.subheader("📊 System Summary")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown(f"""
+    **🔋 Energy Statistics**
+    - Total Generated: {total_solar:.0f} W
+    - Total Consumed: {total_load:.0f} W
+    - Efficiency: {(total_load/total_solar*100 if total_solar > 0 else 0):.1f}%
+    """)
+
+with col2:
+    st.markdown(f"""
+    **📡 Network Status**
+    - Active Nodes: {len(st.session_state.houses)}
+    - Surplus Nodes: {surplus_houses}
+    - Deficit Nodes: {deficit_houses}
+    - Network Health: {np.mean(health_score):.1f}%
+    """)
+
+with col3:
+    st.markdown(f"""
+    **⚡ Power Flow**
+    - Total Surplus: {sum(h['power_balance'] for h in st.session_state.houses if h['surplus']):.0f} W
+    - Total Deficit: {abs(sum(h['power_balance'] for h in st.session_state.houses if h['deficit'])):.0f} W
+    - Equalization Threshold: {equalization_threshold} W
+    """)
+
+with col4:
+    st.markdown(f"""
+    **🔧 System Info**
+    - Frequency: {frequency}
+    - Range: {range_km} km
+    - Protocol: LoRa
+    - Last Update: {datetime.now().strftime('%H:%M:%S')}
+    """)
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: gray;'>
+    Smart Microgrid Power Equalization System | Developed for Kawasan Nirinternet
+    <br>
+    🔬 Research Prototype | Sub-GHz Radio Communication
+</div>
+""", unsafe_allow_html=True)
